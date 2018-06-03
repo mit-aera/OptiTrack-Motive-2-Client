@@ -1,4 +1,4 @@
-#include "motionCaptureClientFramework.h"
+#include "optitrack_motive_2_client/motionCaptureClientFramework.h"
 #include <boost/program_options.hpp>
 #include <Eigen/Core>
 #include <Eigen/Dense>
