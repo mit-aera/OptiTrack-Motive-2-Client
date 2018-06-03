@@ -1,6 +1,7 @@
 #include "motionCaptureClientFramework.h"
 #include <boost/program_options.hpp>
 #include <Eigen/Core>
+#include <Eigen/Dense>
 #include <Eigen/Geometry>
 #include <iostream>
 #include <fstream>
