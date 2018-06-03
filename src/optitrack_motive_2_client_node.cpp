@@ -138,11 +138,6 @@ int main(int argc, char *argv[])
   }
   catch (...) {}
 
-  // Convert address std::string to c_str.
-  char *my_address = new char[szMyIPAddress.length()+1];
-  char *server_address = new char[szServerIPAddress.length()+1];
-  std::strcpy (server_address, szServerIPAddress.c_str());
-  std::strcpy (my_address, szMyIPAddress.c_str());
 
   // Init mocap framework
   agile::motionCaptureClientFramework mocap_ = agile::motionCaptureClientFramework(szMyIPAddress, szServerIPAddress);
