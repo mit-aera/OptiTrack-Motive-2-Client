@@ -1,11 +1,15 @@
+// Include motion capture framework
 #include "optitrack_motive_2_client/motionCaptureClientFramework.h"
+// Include ACL message types (https://bitbucket.org/brettlopez/acl_msgs.git)
+#include "acl_msgs/ViconState.h"
+
+// Includes for node
 #include <boost/program_options.hpp>
 #include <Eigen/Core>
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
 #include <iostream>
 #include <fstream>
-
 
 namespace po = boost::program_options;
 using namespace Eigen;
@@ -99,344 +103,196 @@ Quaternionf calculateRotation(Vector3f mfl, Vector3f mbl, Vector3f mfr, Vector3f
 
 int main(int argc, char *argv[])
 {
-    agile::motionCaptureClientFramework mocap_;
-    // alcm::LCM lcm;
+    
+    
+  // Get CMDline arguments.
+  int mfl, mfr, mbr, mbl;
+  std::string szMyIPAddress; 
+  std::string szServerIPAddress; 
 
-    const int optval = 0x100000;
-    socklen_t optval_size = 4;
-    int server_frequency;
+  try {
+    po::options_description desc ("Options");
+    desc.add_options()
+        ("help,h", "print usage message")
+        ("local",po::value<std::string>(&szMyIPAddress),"local IP Address")
+        ("server",po::value<std::string>(&szServerIPAddress), "server address")
+        ("mfl", po::value<int>(&mfl), "Marker Front Left")
+        ("mfr", po::value<int>(&mfr), "Marker Front Right")
+        ("mbr", po::value<int>(&mbr), "Marker Back Right")
+        ("mbl", po::value<int>(&mbl), "Marker Back Left");
 
-
-    in_addr MulticastAddress{}, MyAddress{}, ServerAddress{};
-    int retval = -1;
-
-    int mfl, mfr, mbr, mbl;
-    std::string szMyIPAddress; 
-    std::string szServerIPAddress; 
-
+    po::variables_map vm;
     try {
-      po::options_description desc ("Options");
-      desc.add_options()
-          ("help,h", "print usage message")
-          ("local",po::value<std::string>(&szMyIPAddress),"local IP Address")
-          ("server",po::value<std::string>(&szServerIPAddress), "server address")
-          ("mfl", po::value<int>(&mfl), "Marker Front Left")
-          ("mfr", po::value<int>(&mfr), "Marker Front Right")
-          ("mbr", po::value<int>(&mbr), "Marker Back Right")
-          ("mbl", po::value<int>(&mbl), "Marker Back Left");
-
-      po::variables_map vm;
-      try {
-        po::store(po::parse_command_line(argc, argv, desc), vm);
-        po::notify (vm);
-      }
-      catch (po::error& e) {
-        std::cerr << e.what() << std::endl;
-        return 0;
-      }
-
-      if (vm.count("help")) {
-        std::cout << desc << "\n";
-        return 0;
-      }
+      po::store(po::parse_command_line(argc, argv, desc), vm);
+      po::notify (vm);
     }
-    catch (...) {}
-
-    char *my_address = new char[szMyIPAddress.length()+1];
-    char *server_address = new char[szServerIPAddress.length()+1];
-
-    std::strcpy (server_address, szServerIPAddress.c_str());
-    std::strcpy (my_address, szMyIPAddress.c_str());
-
-    // Open socket for listening
-    auto DataSocket = socket(AF_INET, SOCK_DGRAM, 0);
-    MulticastAddress.s_addr = inet_addr(MULTICAST_ADDRESS);
-    printf("Client: %s\n", szMyIPAddress.c_str());
-    printf("Server: %s\n", szServerIPAddress.c_str());
-    printf("Multicast Group: %s\n", MULTICAST_ADDRESS);
-
-    // ================ Create "Command" socket
-    unsigned short port = 8000;
-    auto CommandSocket = mocap_.CreateCommandSocket(inet_addr(szMyIPAddress.c_str()), port);
-    if (CommandSocket == -1) {
-    // error
-      printf("Command socket creation error\n");
-    } else {
-      // [optional] set to non-blocking
-      //u_long iMode=1;
-      //ioctlsocket(CommandSocket,FIONBIO,&iMode);
-      // set buffer
-      setsockopt(CommandSocket, SOL_SOCKET, SO_RCVBUF, (char *) &optval, 4);
-      getsockopt(CommandSocket,
-               SOL_SOCKET,
-               SO_RCVBUF,
-               (char *) &optval,
-               &optval_size);
-      if (optval != 0x100000) {
-        // err - actual size...
-        printf("[CommandSocket] ReceiveBuffer size = %d\n", optval);
-      }
-    }
-
-    // allow multiple clients on same machine to use address/port
-    int value = 1;
-    retval = setsockopt(DataSocket,
-                        SOL_SOCKET,
-                        SO_REUSEADDR,
-                        (char *) &value,
-                        sizeof(value));
-    if (retval == -1) {
-      close(DataSocket);
-      printf("Error while setting DataSocket options\n");
-      return -1;
-    }
-
-    struct sockaddr_in MySocketAddr{};
-    memset(&MySocketAddr, 0, sizeof(MySocketAddr));
-    MySocketAddr.sin_family = AF_INET;
-    MySocketAddr.sin_port = htons(PORT_DATA);
-    MySocketAddr.sin_addr.s_addr = htonl(INADDR_ANY);
-    if (bind(DataSocket,
-             (struct sockaddr *) &MySocketAddr,
-             sizeof(struct sockaddr)) == -1) {
-      printf("[PacketClient] bind failed\n");
+    catch (po::error& e) {
+      std::cerr << e.what() << std::endl;
       return 0;
     }
-    // join multicast group
-    struct ip_mreq Mreq{};
-    Mreq.imr_multiaddr = MulticastAddress;
-    Mreq.imr_interface = MyAddress;
-    retval = setsockopt(DataSocket,
-                        IPPROTO_IP,
-                        IP_ADD_MEMBERSHIP,
-                        (char *) &Mreq,
-                        sizeof(Mreq));
-    if (retval == -1) {
-      printf("[PacketClient] join failed\n");
-      return -1;
+
+    if (vm.count("help")) {
+      std::cout << desc << "\n";
+      return 0;
     }
-    // create a 1MB buffer
-    setsockopt(DataSocket, SOL_SOCKET, SO_RCVBUF, (char *) &optval, 4);
-    getsockopt(DataSocket, SOL_SOCKET, SO_RCVBUF, (char *) &optval, &optval_size);
-    if (optval != 0x100000) {
-      printf("[PacketClient] ReceiveBuffer size = %d\n", optval);
+  }
+  catch (...) {}
+
+  // Convert address std::string to c_str.
+  char *my_address = new char[szMyIPAddress.length()+1];
+  char *server_address = new char[szServerIPAddress.length()+1];
+  std::strcpy (server_address, szServerIPAddress.c_str());
+  std::strcpy (my_address, szMyIPAddress.c_str());
+
+  // Init mocap framework
+  agile::motionCaptureClientFramework mocap_ = agile::motionCaptureClientFramework(szMyIPAddress, szServerIPAddress);
+    
+  bool gotQuatOffset_ = false;
+  const unsigned int  nAvgOffset     = 100;
+  std::vector<Quaternionf> quats_;
+
+  Vector3f mfl_p = Vector3f::Zero();
+  Vector3f mfr_p = Vector3f::Zero();
+  Vector3f mbr_p = Vector3f::Zero();
+  Vector3f mbl_p = Vector3f::Zero();
+
+  Matrix3f R_mocap2body;
+  Quaternionf q_mocap2body;
+  Vector3f last_position = Vector3f::Zero();
+  uint64_t last_time=0;
+  uint64_t dt;
+
+  int64_t offset_between_windows_and_linux = std::numeric_limits<int64_t>::max();
+
+  while (true){
+    // Wait for mocap packet
+    mocap_.spin();
+    
+    auto mocap_packet = mocap_.getPacket();
+
+    if (!mocap_packet.tracking_valid)
+      continue;
+
+    int found_markers = 0;
+
+    // Convert from mocap to body
+    Quaternionf quaternionDroneInMocap, quaternionDroneInNED;
+    quaternionDroneInMocap.w() = mocap_packet.orientation[3];
+    quaternionDroneInMocap.x() = mocap_packet.orientation[0];
+    quaternionDroneInMocap.y() = mocap_packet.orientation[1];
+    quaternionDroneInMocap.z() = mocap_packet.orientation[2];
+
+    Quaternionf quaternionRigidBodyInNED = Quaternionf(R_NUE2NED * quaternionDroneInMocap.normalized().toRotationMatrix()
+                                  * R_NUE2NED.transpose());
+
+
+    if (gotQuatOffset_) {
+      
+      quaternionDroneInNED =   q_mocap2body * quaternionRigidBodyInNED ;
+      Vector3f positionInMocap, positionInNED;
+      positionInMocap << mocap_packet.pos[0], mocap_packet.pos[1], mocap_packet.pos[2];
+      positionInNED = R_NUE2NED * positionInMocap;
+      
+      // Pack ROS packet
+      // agile::state_t lcm_state_packet;
+
+      // calulate the windows to linux constant offset by taking the minimum seen offset.
+      int64_t offset = mocap_packet.transmit_timestamp - mocap_packet.receive_timestamp;
+      if (offset < offset_between_windows_and_linux ){
+        offset_between_windows_and_linux = offset;
+      }
+
+      // Correct the packet utime
+      // lcm_state_packet.ntime = mocap_packet.mid_exposure_timestamp - offset_between_windows_and_linux;
+
+      // Fill up LCM message
+      // lcm_state_packet.orient[0] = quaternionDroneInNED.w();
+      // lcm_state_packet.orient[1] = quaternionDroneInNED.x();
+      // lcm_state_packet.orient[2] = quaternionDroneInNED.y();
+      // lcm_state_packet.orient[3] = quaternionDroneInNED.z();
+
+      // lcm_state_packet.position[0]    = positionInNED(0);
+      // lcm_state_packet.position[1]    = positionInNED(1);
+      // lcm_state_packet.position[2]    = positionInNED(2);
+
+      if (last_time == 0) {
+        // last_time = lcm_state_packet.utime;
+        last_position = Vector3f(positionInNED[0], positionInNED[1], positionInNED[2]);
+      }
+      else {
+        // Calculate dt between this packet and last mocap packet.
+        // dt = (lcm_state_packet.utime - last_time);
+
+        Vector3f velocityGlobal;
+        velocityGlobal << (positionInNED[0] - last_position[0]) /dt * 1e6,
+                          (positionInNED[1] - last_position[1]) /dt * 1e6,
+                          (positionInNED[2] - last_position[2]) /dt * 1e6;
+
+
+        //std::cout << "dt: " << dt << " " << lcm_state_packet.utime << " " << last_time << std::endl;
+        //std::cout << "velocityGlobal: " << velocityGlobal << std::endl;
+
+        Vector3f VelocityBody;
+
+        VelocityBody = quaternionDroneInNED.toRotationMatrix().inverse() * velocityGlobal;
+
+        // lcm_state_packet.veloPositionBody[0] = VelocityBody(0);
+        // lcm_state_packet.veloPositionBody[1] = VelocityBody(1);
+        // lcm_state_packet.veloPositionBody[2] = VelocityBody(2);
+
+        last_position = Vector3f(positionInNED[0], positionInNED[1], positionInNED[2]);
+        // last_time = lcm_state_packet.utime;
+      }
+
+      // lcm.publish("poseMoCap", &lcm_state_packet);
     }
+    else {
 
-    mocap_.setDataSocket(DataSocket);
-
-    // ================ Server address for commands
-    sockaddr_in HostAddr;
-
-    memset(&HostAddr, 0, sizeof(HostAddr));
-    HostAddr.sin_family = AF_INET;
-    HostAddr.sin_port = htons(PORT_COMMAND);
-    HostAddr.sin_addr.s_addr = inet_addr(szServerIPAddress.c_str());
-
-    // send initial connect request
-    agile::sPacket PacketOut{};
-    PacketOut.iMessage = NAT_CONNECT;
-    PacketOut.nDataBytes = 0;
-    int nTries = 3;
-    while (nTries--) {
-      ssize_t iRet = sendto(CommandSocket,
-                          (char *) &PacketOut,
-                          4 + PacketOut.nDataBytes,
-                          0,
-                          (sockaddr *) &HostAddr,
-                          sizeof(HostAddr));
-      printf("Trying to connect\n");
-      if (iRet != -1)
-        printf("Connected!\n Waiting for server info in response.\n");
-
-        // Wait for server response. 
-        // This will contain the server tick frequency.
-        char ip_as_str[INET_ADDRSTRLEN];
-        ssize_t nDataBytesReceived;
-        sockaddr_in TheirAddress{};
-        agile::sPacket PacketIn{};
-        socklen_t addr_len = sizeof(struct sockaddr);
-        nDataBytesReceived = recvfrom(CommandSocket,
-                                      (char *) &PacketIn,
-                                      sizeof(agile::sPacket),
-                                      0,
-                                      (struct sockaddr *) &TheirAddress,
-                                      &addr_len);
-
-        // if ((nDataBytesReceived == 0) || (nDataBytesReceived == -1))
-        //   continue;
-
-        // debug - print message
-        inet_ntop(AF_INET, &(TheirAddress.sin_addr), ip_as_str, INET_ADDRSTRLEN);
-        printf("[Client] Received command from %s: Command=%d, nDataBytes=%d\n",
-              ip_as_str, (int) PacketIn.iMessage, (int) PacketIn.nDataBytes);
-
-        unsigned char *ptr = (unsigned char *) &PacketIn;
-        agile::sSender_Server *server_info = (agile::sSender_Server *) (ptr + 4);
-
-        std::cout << "server tick frequency: " << server_info->HighResClockFrequency << std::endl;
-        server_frequency = server_info->HighResClockFrequency;
-        // Done processing server response.
-        break;
-      printf("Initial connect request failed\n");
-    }
-
-
-    bool gotQuatOffset_ = false;
-    const unsigned int  nAvgOffset     = 100;
-    std::vector<Quaternionf> quats_;
-
-    Vector3f mfl_p = Vector3f::Zero();
-    Vector3f mfr_p = Vector3f::Zero();
-    Vector3f mbr_p = Vector3f::Zero();
-    Vector3f mbl_p = Vector3f::Zero();
-
-    Matrix3f R_mocap2body;
-    Quaternionf q_mocap2body;
-    Vector3f last_position = Vector3f::Zero();
-    uint64_t last_time=0;
-    uint64_t dt;
-
-    long offset_between_windows_and_linux = std::numeric_limits<long>::max();
-
-
-
-    while (true){
-        // Wait for mocap packet
-        mocap_.spin();
-
-        auto output = mocap_.getPacket();
-
-        if (!output.tracking_valid)
-          continue;
-
-        int found_markers = 0;
-
-        // Convert from mocap to body
-        Quaternionf quaternionDroneInMocap, quaternionDroneInNED;
-        quaternionDroneInMocap.w() = output.orientation[3];
-        quaternionDroneInMocap.x() = output.orientation[0];
-        quaternionDroneInMocap.y() = output.orientation[1];
-        quaternionDroneInMocap.z() = output.orientation[2];
-
-        Quaternionf quaternionRigidBodyInNED = Quaternionf(R_NUE2NED * quaternionDroneInMocap.normalized().toRotationMatrix()
-                                      * R_NUE2NED.transpose());
-
-
-        if (gotQuatOffset_) {
-          // Pack packet into LCM.
-          // agile::state_t lcm_state_packet;
-
-          
-          
-          quaternionDroneInNED =   q_mocap2body * quaternionRigidBodyInNED ;
-          // quaternionDroneInNED =  quaternionDroneInNED * q_mocap2body;
-
-
-
-          Vector3f positionInMocap, positionInNED;
-          positionInMocap << output.pos[0], output.pos[1], output.pos[2];
-          positionInNED = R_NUE2NED * positionInMocap;
-
-          // lcm_state_packet.utime = (uint64_t) (output.mid_exposure_timestamp / (double)server_frequency * 1e6);
-
-         // calulate the windows to linux constant offset by taking the minimum seen offset.
-          long offset = (uint64_t) (output.transmit_timestamp / (double)server_frequency * 1e6)- getTimestamp();
-          if (offset < offset_between_windows_and_linux ){
-            offset_between_windows_and_linux = offset;
-          }
-
-          // Correct the packet utime
-          // lcm_state_packet.utime = lcm_state_packet.utime - offset_between_windows_and_linux;
-
-          // Fill up LCM message
-          // lcm_state_packet.orient[0] = quaternionDroneInNED.w();
-          // lcm_state_packet.orient[1] = quaternionDroneInNED.x();
-          // lcm_state_packet.orient[2] = quaternionDroneInNED.y();
-          // lcm_state_packet.orient[3] = quaternionDroneInNED.z();
-
-          // lcm_state_packet.position[0]    = positionInNED(0);
-          // lcm_state_packet.position[1]    = positionInNED(1);
-          // lcm_state_packet.position[2]    = positionInNED(2);
-
-          if (last_time == 0) {
-            // last_time = lcm_state_packet.utime;
-            last_position = Vector3f(positionInNED[0], positionInNED[1], positionInNED[2]);
-          }
-          else {
-            dt = (lcm_state_packet.utime - last_time);
-
-            Vector3f velocityGlobal;
-            velocityGlobal << (positionInNED[0] - last_position[0]) /dt * 1e6,
-                              (positionInNED[1] - last_position[1]) /dt * 1e6,
-                              (positionInNED[2] - last_position[2]) /dt * 1e6;
-
-
-            //std::cout << "dt: " << dt << " " << lcm_state_packet.utime << " " << last_time << std::endl;
-            //std::cout << "velocityGlobal: " << velocityGlobal << std::endl;
-
-            Vector3f VelocityBody;
-
-            VelocityBody = quaternionDroneInNED.toRotationMatrix().inverse() * velocityGlobal;
-
-            // lcm_state_packet.veloPositionBody[0] = VelocityBody(0);
-            // lcm_state_packet.veloPositionBody[1] = VelocityBody(1);
-            // lcm_state_packet.veloPositionBody[2] = VelocityBody(2);
-
-            last_position = Vector3f(positionInNED[0], positionInNED[1], positionInNED[2]);
-            // last_time = lcm_state_packet.utime;
-          }
-
-          // lcm.publish("poseMoCap", &lcm_state_packet);
+      // Loop through and find the relevant markers for calibration
+      for (auto marker: mocap_packet.markers_) {
+        if (marker.id == mfl) {
+          mfl_p << marker.x, marker.y, marker.z;
+          found_markers++;
         }
-        else {
-
-          // Loop through and find the relevant markers for calibration
-          for (auto marker: output.markers_) {
-            if (marker.id == mfl) {
-              mfl_p << marker.x, marker.y, marker.z;
-              found_markers++;
-            }
-            if (marker.id == mbl) {
-              mbl_p << marker.x, marker.y, marker.z;
-              found_markers++;
-            }
-            if (marker.id == mbr) {
-              mbr_p << marker.x, marker.y, marker.z;
-              found_markers++;
-            }
-            if (marker.id == mfr) {
-              mfr_p << marker.x, marker.y, marker.z;
-              found_markers++;
-            }
-          }
-
-          if (found_markers == 4) {
-            std::cout << "MFL" << mfl_p << std::endl;
-            Quaternionf q = calculateRotation(mfl_p, mbl_p, mfr_p, mbr_p, quaternionRigidBodyInNED);
-            quats_.push_back(q);
-            std::cout << "Quaternion: " << q.w() << " " << q.x() << " " << q.y() << " " << q.z() << std::endl;
-          }
-          else {
-            std::cout << "Could not find all 4 markers " << std::endl;
-          }
+        if (marker.id == mbl) {
+          mbl_p << marker.x, marker.y, marker.z;
+          found_markers++;
         }
-
-        if (quats_.size() == nAvgOffset) {
-           q_mocap2body = averageQuaternions<float>(quats_.begin(), quats_.end());
-           R_mocap2body = q_mocap2body.normalized().toRotationMatrix();
-
-           gotQuatOffset_ = true;
-           std::ofstream quatOffsetFile_;
-           quatOffsetFile_.open("quatOffset");
-           quatOffsetFile_ << q_mocap2body.w() << std::endl
-                            << q_mocap2body.x() << std::endl
-                            << q_mocap2body.y() << std::endl
-                            << q_mocap2body.z() << std::endl;
-
-           //std::cout << R_mocap2body << std::endl;
-
+        if (marker.id == mbr) {
+          mbr_p << marker.x, marker.y, marker.z;
+          found_markers++;
         }
+        if (marker.id == mfr) {
+          mfr_p << marker.x, marker.y, marker.z;
+          found_markers++;
+        }
+      }
 
+      if (found_markers == 4) {
+        std::cout << "MFL" << mfl_p << std::endl;
+        Quaternionf q = calculateRotation(mfl_p, mbl_p, mfr_p, mbr_p, quaternionRigidBodyInNED);
+        quats_.push_back(q);
+        std::cout << "Quaternion: " << q.w() << " " << q.x() << " " << q.y() << " " << q.z() << std::endl;
+      }
+      else {
+        std::cout << "Could not find all 4 markers " << std::endl;
+      }
     }
 
+    if (quats_.size() == nAvgOffset) {
+        q_mocap2body = averageQuaternions<float>(quats_.begin(), quats_.end());
+        R_mocap2body = q_mocap2body.normalized().toRotationMatrix();
+
+        gotQuatOffset_ = true;
+        std::ofstream quatOffsetFile_;
+        quatOffsetFile_.open("quatOffset");
+        quatOffsetFile_ << q_mocap2body.w() << std::endl
+                        << q_mocap2body.x() << std::endl
+                        << q_mocap2body.y() << std::endl
+                        << q_mocap2body.z() << std::endl;
+
+        //std::cout << R_mocap2body << std::endl;
+
+    }
+  }
 }

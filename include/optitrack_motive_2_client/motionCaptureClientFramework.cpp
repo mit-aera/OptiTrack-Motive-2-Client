@@ -2,9 +2,161 @@
 
 namespace agile {
 
-motionCaptureClientFramework::motionCaptureClientFramework()
+motionCaptureClientFramework::motionCaptureClientFramework(std::string& szMyIPAddress, std::string& szServerIPAddress)
 {
-    ok_ = true;
+
+  // Convert address std::string to c_str.
+  
+  char *my_address = new char[szMyIPAddress.length()+1];
+  char *server_address = new char[szServerIPAddress.length()+1];
+  std::strcpy (server_address, szServerIPAddress.c_str());
+  std::strcpy (my_address, szMyIPAddress.c_str());
+
+  // init connection
+  ok_ = initConnection();
+}
+
+bool motionCaptureClientFramework::initConnection() {
+  const int optval = 0x100000;
+  socklen_t optval_size = 4;
+  
+  in_addr MulticastAddress{}, MyAddress{}, ServerAddress{};
+  int retval = -1;
+
+  // Open socket for listening
+  auto DataSocket = socket(AF_INET, SOCK_DGRAM, 0);
+  MulticastAddress.s_addr = inet_addr(MULTICAST_ADDRESS);
+  printf("Client: %s\n", my_address);
+  printf("Server: %s\n", server_address);
+  printf("Multicast Group: %s\n", MULTICAST_ADDRESS);
+
+  // ================ Create "Command" socket
+  unsigned short port = 8000;
+  auto CommandSocket = CreateCommandSocket(inet_addr(my_address), port);
+  if (CommandSocket == -1) {
+  // error
+    printf("Command socket creation error\n");
+  } else {
+    // [optional] set to non-blocking
+    //u_long iMode=1;
+    //ioctlsocket(CommandSocket,FIONBIO,&iMode);
+    // set buffer
+    setsockopt(CommandSocket, SOL_SOCKET, SO_RCVBUF, (char *) &optval, 4);
+    getsockopt(CommandSocket,
+              SOL_SOCKET,
+              SO_RCVBUF,
+              (char *) &optval,
+              &optval_size);
+    if (optval != 0x100000) {
+      // err - actual size...
+      printf("[CommandSocket] ReceiveBuffer size = %d\n", optval);
+    }
+  }
+
+  // allow multiple clients on same machine to use address/port
+  int value = 1;
+  retval = setsockopt(DataSocket,
+                      SOL_SOCKET,
+                      SO_REUSEADDR,
+                      (char *) &value,
+                      sizeof(value));
+  if (retval == -1) {
+    close(DataSocket);
+    printf("Error while setting DataSocket options\n");
+    return -1;
+  }
+
+  struct sockaddr_in MySocketAddr{};
+  memset(&MySocketAddr, 0, sizeof(MySocketAddr));
+  MySocketAddr.sin_family = AF_INET;
+  MySocketAddr.sin_port = htons(PORT_DATA);
+  MySocketAddr.sin_addr.s_addr = htonl(INADDR_ANY);
+  if (bind(DataSocket,
+            (struct sockaddr *) &MySocketAddr,
+            sizeof(struct sockaddr)) == -1) {
+    printf("[PacketClient] bind failed\n");
+    return 0;
+  }
+  // join multicast group
+  struct ip_mreq Mreq{};
+  Mreq.imr_multiaddr = MulticastAddress;
+  Mreq.imr_interface = MyAddress;
+  retval = setsockopt(DataSocket,
+                      IPPROTO_IP,
+                      IP_ADD_MEMBERSHIP,
+                      (char *) &Mreq,
+                      sizeof(Mreq));
+  if (retval == -1) {
+    printf("[PacketClient] join failed\n");
+    return -1;
+  }
+  // create a 1MB buffer
+  setsockopt(DataSocket, SOL_SOCKET, SO_RCVBUF, (char *) &optval, 4);
+  getsockopt(DataSocket, SOL_SOCKET, SO_RCVBUF, (char *) &optval, &optval_size);
+  if (optval != 0x100000) {
+    printf("[PacketClient] ReceiveBuffer size = %d\n", optval);
+  }
+
+  setDataSocket(DataSocket);
+
+  // ================ Server address for commands
+  sockaddr_in HostAddr;
+
+  memset(&HostAddr, 0, sizeof(HostAddr));
+  HostAddr.sin_family = AF_INET;
+  HostAddr.sin_port = htons(PORT_COMMAND);
+  HostAddr.sin_addr.s_addr = inet_addr(server_address);
+
+  // send initial connect request
+  agile::sPacket PacketOut{};
+  PacketOut.iMessage = NAT_CONNECT;
+  PacketOut.nDataBytes = 0;
+  int nTries = 3;
+  while (nTries--) {
+    ssize_t iRet = sendto(CommandSocket,
+                        (char *) &PacketOut,
+                        4 + PacketOut.nDataBytes,
+                        0,
+                        (sockaddr *) &HostAddr,
+                        sizeof(HostAddr));
+    printf("Trying to connect\n");
+    if (iRet != -1)
+      printf("Connected!\n Waiting for server info in response.\n");
+
+      // Wait for server response. 
+      // This will contain the server tick frequency.
+      char ip_as_str[INET_ADDRSTRLEN];
+      ssize_t nDataBytesReceived;
+      sockaddr_in TheirAddress{};
+      agile::sPacket PacketIn{};
+      socklen_t addr_len = sizeof(struct sockaddr);
+      nDataBytesReceived = recvfrom(CommandSocket,
+                                    (char *) &PacketIn,
+                                    sizeof(agile::sPacket),
+                                    0,
+                                    (struct sockaddr *) &TheirAddress,
+                                    &addr_len);
+
+      // if ((nDataBytesReceived == 0) || (nDataBytesReceived == -1))
+      //   continue;
+
+      // debug - print message
+      inet_ntop(AF_INET, &(TheirAddress.sin_addr), ip_as_str, INET_ADDRSTRLEN);
+      printf("[Client] Received command from %s: Command=%d, nDataBytes=%d\n",
+            ip_as_str, (int) PacketIn.iMessage, (int) PacketIn.nDataBytes);
+
+      unsigned char *ptr = (unsigned char *) &PacketIn;
+      agile::sSender_Server *server_info = (agile::sSender_Server *) (ptr + 4);
+
+      std::cout << "server tick frequency: " << server_info->HighResClockFrequency << std::endl;
+      server_frequency = server_info->HighResClockFrequency;
+      // Done processing server response.
+      break;
+
+      return true;
+    printf("Initial connect request failed\n");
+    return false;
+  }
 }
 
 // ============================== Data mode ================================ //
@@ -86,6 +238,8 @@ void motionCaptureClientFramework::spin() {
 }
 
 
+
+
 // ============================= Command mode ============================== //
 // Send a command to Motive.
 int motionCaptureClientFramework::SendCommand(char *szCommand) {
@@ -140,6 +294,7 @@ void motionCaptureClientFramework::Unpack(char *pData, std::vector<Packet> &outp
   // printf("Begin Packet\n-------\n");
 
   output_packet_ = Packet();
+  output_packet_.receive_timestamp = getTimestamp();
   // First 2 Bytes is message ID
   int MessageID = 0;
   memcpy(&MessageID, ptr, 2);
@@ -663,7 +818,8 @@ void motionCaptureClientFramework::Unpack(char *pData, std::vector<Packet> &outp
       timestamp = (double) fTemp;
     }
 
-    output_packet_.timestamp = timestamp;
+    // Convert to microseconds
+    output_packet_.timestamp = (timestamp*1e9)/server_frequency;
     // printf("Timestamp : %3.3f\n", timestamp);
 
     // high res timestamps (version 3.0 and later)
@@ -685,10 +841,11 @@ void motionCaptureClientFramework::Unpack(char *pData, std::vector<Packet> &outp
       ptr += 8;
       // printf("Transmit timestamp : %" PRIu64 "\n", transmitTimestamp);
 
+      // Convert timestamps to microseconds and save them in the output packet
 
-      output_packet_.mid_exposure_timestamp = cameraMidExposureTimestamp;
-      output_packet_.camera_data_received_timestamp = cameraDataReceivedTimestamp;
-      output_packet_.transmit_timestamp = transmitTimestamp;
+      output_packet_.mid_exposure_timestamp = (cameraMidExposureTimestamp*1e9)/server_frequency;
+      output_packet_.camera_data_received_timestamp = (cameraDataReceivedTimestamp*1e9)/server_frequency;
+      output_packet_.transmit_timestamp = (transmitTimestamp*1e9)/server_frequency;
     }
 
     // frame params

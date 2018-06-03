@@ -2,8 +2,8 @@
 #define MOTIONCAPTURECLIENTFRAMEWORK_H
 
 #include <iostream>
+#include <linux/limits.h>
 #include <boost/optional.hpp>
-// #include <agile/state_t.hpp>
 #include <chrono>
 #include <thread>
 #include <unistd.h>
@@ -27,10 +27,6 @@
 
 #define MAX_PACKETSIZE              100000    // actual packet size is dynamic
 #define MAX_NAMELENGTH              256
-#define PATH_MAX 										1
-
-// WARNING: this might not be a constant!
-#define SERVER_CLOCK_FREQ 3507520
 
 #define MULTICAST_ADDRESS       "239.255.42.99"
 #define PORT_COMMAND            1510      // NatNet Command channel
@@ -93,43 +89,33 @@ namespace agile {
         int labeled_marker_count;
 
         int frame_number;
-        double timestamp;
+
+        // NOTE: All are nanosecond timestamps
+        uint64_t timestamp;
         uint64_t mid_exposure_timestamp;
         uint64_t camera_data_received_timestamp;
         uint64_t transmit_timestamp;
-
-        double mid_exposure_ros_timestamp;
-
+        // Calculated on receive.
+        uint64_t receive_timestamp;
     };
 
 class motionCaptureClientFramework
 {
 
-
-    // Sockets
-    int CommandSocket;
-    int DataSocket;
-    in_addr ServerAddress;
-    sockaddr_in HostAddr;
-
-    // Versioning
-    int NatNetVersion[4] = {3, 0, 0, 0};
-    int ServerVersion[4] = {0, 0, 0, 0};
-
-    // Command mode global variables
-    int gCommandResponse = 0;
-    int gCommandResponseSize = 0;
-    unsigned char gCommandResponseString[PATH_MAX];
-    void CommandListenThread();
-
-
-
 public:
-    motionCaptureClientFramework();
+    motionCaptureClientFramework(std::string& szMyIPAddress, std::string& szServerIPAddress);
 
+    // Starts connection to mocap and initializes settings.
+    bool initConnection();
+
+    // Blocking call that waits for a mocap packet to arrive. Then returns.
     void spin();
 
     bool isOK() {return ok_;}
+
+    uint64_t getServerFrequency() {return server_frequency;};
+
+    uint64_t getTimestamp() {return std::chrono::high_resolution_clock::now().time_since_epoch() / std::chrono::nanoseconds(1);}
 
     void setMulticastAddress (std::string address_) {multicast_address = address_;}
 
@@ -142,7 +128,28 @@ public:
     void setDataSocket (int sock) {DataSocket = sock;}
 
 private:
-    bool ok_;
+    // Sockets
+    int CommandSocket;
+    int DataSocket;
+    in_addr ServerAddress;
+    sockaddr_in HostAddr;
+    char *my_address;
+    char *server_address;
+
+    // Versioning
+    int NatNetVersion[4] = {3, 0, 0, 0};
+    int ServerVersion[4] = {0, 0, 0, 0};
+
+    // Command mode global variables
+    int gCommandResponse = 0;
+    int gCommandResponseSize = 0;
+    unsigned char gCommandResponseString[PATH_MAX];
+    void CommandListenThread();
+
+    // Instance vars
+    uint64_t server_frequency = 0;
+    bool ok_ = false;
+    
 
     bool DecodeTimecode(unsigned int inTimecode,
                     unsigned int inTimecodeSubframe,

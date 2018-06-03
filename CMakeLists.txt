@@ -1,29 +1,3 @@
-# CMAKE_MINIMUM_REQUIRED(VERSION 3.3.0)
-# SET(CMAKE_COLOR_MAKEFILE ON)
-# SET(CMAKE_VERBOSE_MAKEFILE OFF)
-
-# PROJECT(OptitrackClient)
-
-# # Use C++11
-# set(CMAKE_CXX_STANDARD 11)
-# set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wall -Wno-unused-function")
-
-# # Add source executables and libraries
-# add_library(motionCaptureClientFramework SHARED motionCaptureClientFramework.cpp)
-# add_executable (motionCaptureReceiver motionCaptureReceiver.cpp)
-
-# # Add external dependencies
-
-# find_package(Boost COMPONENTS program_options REQUIRED)
-
-# INCLUDE_DIRECTORIES(${EIGEN3_INCLUDE_DIRS})
-# INCLUDE_DIRECTORIES(${Boost_INCLUDE_DIRS})
-
-# # Link source library with Boost.
-# target_link_libraries(motionCaptureReceiver motionCaptureClientFramework ${Boost_LIBRARIES})
-
-##############################################################
-
 cmake_minimum_required(VERSION 2.8.3)
 project(optitrack_motive_2_client)
 
@@ -38,6 +12,7 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   rostime
   std_msgs
+  acl_msgs # used for compatibility with ACL group's Vicon message type.
 )
 
 ## System dependencies are found with CMake's conventions
@@ -175,7 +150,8 @@ add_executable(${PROJECT_NAME}_node src/optitrack_motive_2_client_node.cpp)
 # add_dependencies(${PROJECT_NAME}_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 ## Specify libraries to link a library or executable target against
-target_link_libraries(${PROJECT_NAME}
+target_link_libraries(${PROJECT_NAME}_node
+  ${PROJECT_NAME}
   ${catkin_LIBRARIES}
   ${Boost_LIBRARIES} 
   ${catkin_LIBRARIES}
@@ -196,11 +172,11 @@ target_link_libraries(${PROJECT_NAME}
 # )
 
 ## Mark executables and/or libraries for installation
-# install(TARGETS ${PROJECT_NAME} ${PROJECT_NAME}_node
-#   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-#   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-#   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
-# )
+install(TARGETS ${PROJECT_NAME}_node
+  ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+  LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+  RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
 
 ## Mark cpp header files for installation
 # install(DIRECTORY include/${PROJECT_NAME}/
