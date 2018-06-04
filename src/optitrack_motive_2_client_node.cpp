@@ -122,37 +122,75 @@ int main(int argc, char *argv[])
     }
     uint64_t packet_ntime = mocap_packet.mid_exposure_timestamp - offset_between_windows_and_linux;
 
-    // Convert rigid body position from NUE to ROS ENU
-    Vector3d positionENUVector = positionConvertNUE2ENU(mocap_packet.pos);
-
-    // Convert rigid body rotation from NUE to ROS ENU
-    Quaterniond quaternionENUVector = quaternionConvertNUE2ENU(mocap_packet.orientation);
-
     // Get past state and publisher (if they exist)
+    bool hasPreviousMessage = (rosPublishers.find(mocap_packet.rigid_body_id) != rosPublishers.end());
     ros::Publisher publisher;
-    //auto pastState = pastStateMessages.find(mocap_packet.rigid_body_id);
-
+    acl_msgs::ViconState lastState;
+    acl_msgs::ViconState currentState;
+    
     // Initialize publisher for rigid body if not exist.
-    if (rosPublishers.find(mocap_packet.rigid_body_id) == rosPublishers.end()){
+    if (!hasPreviousMessage){
       std::string topic;
       std::stringstream(topic) << "/" << mocap_packet.model_name << "/vicon";
       //std::string topic = printf("/%s/vicon", mocap_packet.model_name.c_str());
       publisher = n.advertise<acl_msgs::ViconState>(topic, 1);
       rosPublishers[mocap_packet.rigid_body_id] = publisher;
     } else {
+      // Get saved publisher and last state
       publisher = rosPublishers[mocap_packet.rigid_body_id];
+      lastState = pastStateMessages[mocap_packet.rigid_body_id];
     }
 
-    
+    // Add timestamp
+    currentState.header.stamp = ros::Time(packet_ntime/1e9, packet_ntime%(int64_t)1e9);
+
+    // Convert rigid body position from NUE to ROS ENU
+    Vector3d positionENUVector = positionConvertNUE2ENU(mocap_packet.pos);
+    currentState.pose.position.x = positionENUVector(0);
+    currentState.pose.position.y = positionENUVector(1);
+    currentState.pose.position.z = positionENUVector(2);
+    // Convert rigid body rotation from NUE to ROS ENU
+    Quaterniond quaternionENUVector = quaternionConvertNUE2ENU(mocap_packet.orientation);
+    currentState.pose.orientation.x = quaternionENUVector.x();
+    currentState.pose.orientation.y = quaternionENUVector.y();
+    currentState.pose.orientation.z = quaternionENUVector.z();
+    currentState.pose.orientation.w = quaternionENUVector.w();
+    currentState.has_pose = true;
     
     // Loop through markers and convert positions from NUE to ENU
     // @TODO since the state message does not understand marker locations.
 
-    // Calculate dt from last state message.
+    if (hasPreviousMessage){
+      // Calculate twist. Requires last state message.
+      currentState.twist.linear.x = currentState.pose.position.x - lastState.pose.position.x;
+      currentState.twist.linear.y = currentState.pose.position.y - lastState.pose.position.y;
+      currentState.twist.linear.z = currentState.pose.position.z - lastState.pose.position.z;
+      
+      // Calculate rotational twist
+      Quaterniond lastQuaternion;
+      lastQuaternion.x() = lastState.pose.orientation.x;
+      lastQuaternion.y() = lastState.pose.orientation.y;
+      lastQuaternion.z() = lastState.pose.orientation.z;
+      lastQuaternion.w() = lastState.pose.orientation.w;
 
-    // Calculate twist. Requires last state message.
+      // @TODO: not sure how to calculate the angular twist. Is it in local frame or global frame?
+      Quaterniond twistQuaternion = quaternionENUVector * lastQuaternion.inverse();
+      Vector3d twistEulerVector = twistQuaternion.toRotationMatrix().eulerAngles(2, 1, 0);
+
+      currentState.twist.angular.x = twistEulerVector(0);
+      currentState.twist.angular.y = twistEulerVector(1);
+      currentState.twist.angular.z = twistEulerVector(2);
+
+      currentState.has_twist = true;
+      
+      // Calculate accelerations. Requires last state message.
+      int64_t dt_nsec = packet_ntime - (lastState.header.stamp.sec*1e9 + lastState.header.stamp.nsec);
+      currentState.accel.x = (currentState.twist.linear.x - lastState.twist.linear.x)/(dt_nsec * 1e9);
+      currentState.accel.y = (currentState.twist.linear.y - lastState.twist.linear.y)/(dt_nsec * 1e9);
+      currentState.accel.z = (currentState.twist.linear.z - lastState.twist.linear.z)/(dt_nsec * 1e9);
+      currentState.has_accel = true;
+    }
     
-    // Calculate accelerations. Requires last state message.
 
     // Pack ROS message
 
