@@ -3,6 +3,9 @@
 // Include ACL message types (https://bitbucket.org/brettlopez/acl_msgs.git)
 #include "acl_msgs/ViconState.h"
 
+// Includes for ROS
+#include "ros/ros.h"
+
 // Includes for node
 #include <boost/program_options.hpp>
 #include <Eigen/Core>
@@ -55,7 +58,13 @@ Quaterniond quaternionConvertNUE2ENU(double* quaternionNUE){
 
 int main(int argc, char *argv[])
 {
-    
+  // Keep track of ntime offset.
+  int64_t offset_between_windows_and_linux = std::numeric_limits<int64_t>::max();
+ 
+  // Init ROS
+  ros::init(argc, argv, "optitrack_motive_2_client_node");
+  ros::NodeHandle n;
+  
     
   // Get CMDline arguments for server and local IP addresses.
   std::string szMyIPAddress; 
@@ -87,19 +96,19 @@ int main(int argc, char *argv[])
 
   // Init mocap framework
   agile::motionCaptureClientFramework mocap_ = agile::motionCaptureClientFramework(szMyIPAddress, szServerIPAddress);
-    
-  // Some vars to calculate velocity and dts
-  Vector3f last_position = Vector3f::Zero();
-  uint64_t last_time=0;
-  uint64_t dt;
 
-  int64_t offset_between_windows_and_linux = std::numeric_limits<int64_t>::max();
+  // Some vars to calculate twist/acceleration and dts
+  // Also keeps track of the various publishers
+  std::map<int, ros::Publisher> rosPublishers;
+  std::map<int, acl_msgs::ViconState> pastStateMessages;
 
   while (true){
     // Wait for mocap packet
     mocap_.spin();
     
     auto mocap_packet = mocap_.getPacket();
+
+    // @TODO: Make getPacket return a list.
 
     // Skip this rigid body if tracking is invalid
     if (!mocap_packet.tracking_valid)
@@ -114,9 +123,30 @@ int main(int argc, char *argv[])
     uint64_t packet_ntime = mocap_packet.mid_exposure_timestamp - offset_between_windows_and_linux;
 
     // Convert rigid body position from NUE to ROS ENU
+    Vector3d positionENUVector = positionConvertNUE2ENU(mocap_packet.pos);
+
     // Convert rigid body rotation from NUE to ROS ENU
+    Quaterniond quaternionENUVector = quaternionConvertNUE2ENU(mocap_packet.orientation);
+
+    // Get past state and publisher (if they exist)
+    ros::Publisher publisher;
+    //auto pastState = pastStateMessages.find(mocap_packet.rigid_body_id);
+
+    // Initialize publisher for rigid body if not exist.
+    if (rosPublishers.find(mocap_packet.rigid_body_id) == rosPublishers.end()){
+      std::string topic;
+      std::stringstream(topic) << "/" << mocap_packet.model_name << "/vicon";
+      //std::string topic = printf("/%s/vicon", mocap_packet.model_name.c_str());
+      publisher = n.advertise<acl_msgs::ViconState>(topic, 1);
+      rosPublishers[mocap_packet.rigid_body_id] = publisher;
+    } else {
+      publisher = rosPublishers[mocap_packet.rigid_body_id];
+    }
+
+    
     
     // Loop through markers and convert positions from NUE to ENU
+    // @TODO since the state message does not understand marker locations.
 
     // Calculate dt from last state message.
 
@@ -127,11 +157,8 @@ int main(int argc, char *argv[])
     // Pack ROS message
 
     // Save state for future acceleration and twist computations
-    if (last_time == 0) {
-      last_time = packet_ntime;
       // Save ros message in map indexed by rigid body id.
-    }
-
+    
     ///////////////////////////////////
 
       // Fill up LCM message
