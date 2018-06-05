@@ -229,8 +229,9 @@ void motionCaptureClientFramework::spin() {
            &addr_len);
   // Once we have bytes recieved Unpack organizes all the data
   //
-  std::vector<Packet> outputs;
-  Unpack(szData, outputs);
+  // Clear vector of previous packets.
+  processedPackets_.clear();
+  Unpack(szData, processedPackets_);
 
   /*if (outputs.size() > 0) {
       PublishPacketRos(outputs[0]);

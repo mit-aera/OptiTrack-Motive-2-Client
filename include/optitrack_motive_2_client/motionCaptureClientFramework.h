@@ -119,7 +119,7 @@ public:
 
     void setMulticastAddress (std::string address_) {multicast_address = address_;}
 
-    Packet getPacket() {return output_packet_;}
+    std::vector<Packet> getPackets() {return processedPackets_;}
 
     bool IPAddress_StringToAddr(char *szNameOrAddress, struct in_addr *Address) const;
 
@@ -173,6 +173,7 @@ private:
 
     std::string multicast_address;
 
+    std::vector<Packet> processedPackets_;
     Packet output_packet_;
 
 };
