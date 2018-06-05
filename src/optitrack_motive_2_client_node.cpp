@@ -180,7 +180,6 @@ int main(int argc, char *argv[])
       currentState.twist.angular.x = twistEulerVector(0);
       currentState.twist.angular.y = twistEulerVector(1);
       currentState.twist.angular.z = twistEulerVector(2);
-
       currentState.has_twist = true;
       
       // Calculate accelerations. Requires last state message.
@@ -191,43 +190,11 @@ int main(int argc, char *argv[])
       currentState.has_accel = true;
     }
     
-
-    // Pack ROS message
-
     // Save state for future acceleration and twist computations
-      // Save ros message in map indexed by rigid body id.
-    
-    ///////////////////////////////////
+    pastStateMessages[mocap_packet.rigid_body_id] = currentState;
 
-      // Fill up LCM message
-      // lcm_state_packet.orient[0] = quaternionRigidBodyInNED.w();
-      // lcm_state_packet.orient[1] = quaternionRigidBodyInNED.x();
-      // lcm_state_packet.orient[2] = quaternionRigidBodyInNED.y();
-      // lcm_state_packet.orient[3] = quaternionRigidBodyInNED.z();
+    // Publish ROS state.
+    publisher.publish(currentState);
 
-      // lcm_state_packet.position[0]    = positionInNED(0);
-      // lcm_state_packet.position[1]    = positionInNED(1);
-      // lcm_state_packet.position[2]    = positionInNED(2);
-
-
-        // Vector3f velocityGlobal;
-        // velocityGlobal << (positionInNED[0] - last_position[0]) /dt * 1e6,
-        //                   (positionInNED[1] - last_position[1]) /dt * 1e6,
-        //                   (positionInNED[2] - last_position[2]) /dt * 1e6;
-
-
-  
-        // Vector3f VelocityBody;
-
-        // VelocityBody = quaternionRigidBodyInNED.toRotationMatrix().inverse() * velocityGlobal;
-
-        // // lcm_state_packet.veloPositionBody[0] = VelocityBody(0);
-        // // lcm_state_packet.veloPositionBody[1] = VelocityBody(1);
-        // // lcm_state_packet.veloPositionBody[2] = VelocityBody(2);
-
-        // last_position = Vector3f(positionInNED[0], positionInNED[1], positionInNED[2]);
-        // last_time = lcm_state_packet.utime;
-
-      // lcm.publish("poseMoCap", &lcm_state_packet);
   }
 }
