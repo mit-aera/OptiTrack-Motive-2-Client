@@ -93,6 +93,9 @@ qtcreator-*
 # Emacs
 .#*
 
+# vim
+*.sw*
+
 # Catkin custom files
 CATKIN_IGNORE
 

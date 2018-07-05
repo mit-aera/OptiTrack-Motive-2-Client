@@ -133,8 +133,8 @@ private:
     int DataSocket;
     in_addr ServerAddress;
     sockaddr_in HostAddr;
-    char *my_address;
-    char *server_address;
+    const char *my_address;
+    const char *server_address;
 
     // Versioning
     int NatNetVersion[4] = {3, 0, 0, 0};

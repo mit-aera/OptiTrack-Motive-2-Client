@@ -93,7 +93,6 @@ int main(int argc, char *argv[])
   }
   catch (...) {}
 
-
   // Init mocap framework
   agile::motionCaptureClientFramework mocap_ = agile::motionCaptureClientFramework(szMyIPAddress, szServerIPAddress);
 
@@ -132,9 +131,8 @@ int main(int argc, char *argv[])
       
       // Initialize publisher for rigid body if not exist.
       if (!hasPreviousMessage){
-        std::string topic;
-        std::stringstream(topic) << "/" << mocap_packet.model_name << "/vicon";
-        //std::string topic = printf("/%s/vicon", mocap_packet.model_name.c_str());
+        std::string topic = "/" + mocap_packet.model_name + "/vicon";
+
         publisher = n.advertise<acl_msgs::ViconState>(topic, 1);
         rosPublishers[mocap_packet.rigid_body_id] = publisher;
       } else {
