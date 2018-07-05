@@ -20,7 +20,7 @@ catkin_make
 ## Running Client Node
 
 ```bash
-rosrun optitrack_motive_2_client optitrack_motive_2_client_node --server 192.168.2.10 --client 192.168.2.1
+rosrun optitrack_motive_2_client optitrack_motive_2_client_node --server 192.168.1.12 --local 192.168.1.123
 ```
 
 ## Debugging Client Node
@@ -29,7 +29,7 @@ rosrun optitrack_motive_2_client optitrack_motive_2_client_node --server 192.168
 # From root of workspace
 catkin_make -DCMAKE_BUILD_TYPE=Debug
 
-gdb `catkin_find optitrack_motive_2_client optitrack_motive_2_client_node`
+gdb --args `catkin_find optitrack_motive_2_client optitrack_motive_2_client_node` --server 192.168.1.12 --local 192.168.1.123
 # Common gdb commands
 > run
 > bt
