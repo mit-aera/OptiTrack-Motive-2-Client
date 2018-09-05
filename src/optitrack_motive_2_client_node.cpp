@@ -162,9 +162,10 @@ int main(int argc, char *argv[])
 
       if (hasPreviousMessage){
         // Calculate twist. Requires last state message.
-        currentState.twist.linear.x = currentState.pose.position.x - lastState.pose.position.x;
-        currentState.twist.linear.y = currentState.pose.position.y - lastState.pose.position.y;
-        currentState.twist.linear.z = currentState.pose.position.z - lastState.pose.position.z;
+        int64_t dt_nsec = packet_ntime - (lastState.header.stamp.sec*1e9 + lastState.header.stamp.nsec);
+        currentState.twist.linear.x = (currentState.pose.position.x - lastState.pose.position.x)/(dt_nsec * 1e9);
+        currentState.twist.linear.y = (currentState.pose.position.y - lastState.pose.position.y)/(dt_nsec * 1e9);
+        currentState.twist.linear.z = (currentState.pose.position.z - lastState.pose.position.z)/(dt_nsec * 1e9);
         
         // Calculate rotational twist
         Quaterniond lastQuaternion;
@@ -173,21 +174,26 @@ int main(int argc, char *argv[])
         lastQuaternion.z() = lastState.pose.orientation.z;
         lastQuaternion.w() = lastState.pose.orientation.w;
 
-        // @TODO: not sure how to calculate the angular twist. Is it in local frame or global frame?
+        // @TODO: calculate the angular velocity from the two quaternions in body frame.
         Quaterniond twistQuaternion = quaternionENUVector * lastQuaternion.inverse();
         Vector3d twistEulerVector = twistQuaternion.toRotationMatrix().eulerAngles(2, 1, 0);
 
-        currentState.twist.angular.x = twistEulerVector(0);
-        currentState.twist.angular.y = twistEulerVector(1);
-        currentState.twist.angular.z = twistEulerVector(2);
-        currentState.has_twist = true;
+        currentState.twist.angular.x = 0;
+        currentState.twist.angular.y = 0;
+        currentState.twist.angular.z = 0;
+          
+        //currentState.twist.angular.x = twistEulerVector(0);
+        //currentState.twist.angular.y = twistEulerVector(1);
+        //currentState.twist.angular.z = twistEulerVector(2);
+        //currentState.has_twist = true;
         
         // Calculate accelerations. Requires last state message.
-        int64_t dt_nsec = packet_ntime - (lastState.header.stamp.sec*1e9 + lastState.header.stamp.nsec);
         currentState.accel.x = (currentState.twist.linear.x - lastState.twist.linear.x)/(dt_nsec * 1e9);
         currentState.accel.y = (currentState.twist.linear.y - lastState.twist.linear.y)/(dt_nsec * 1e9);
         currentState.accel.z = (currentState.twist.linear.z - lastState.twist.linear.z)/(dt_nsec * 1e9);
         currentState.has_accel = true;
+          
+        // @TODO: Calculate angular acceleration
       }
       
       // Save state for future acceleration and twist computations
