@@ -20,8 +20,8 @@ using namespace Eigen;
 // Used to convert mocap frame (NUE) to LCM NED.
 // static Eigen::Matrix3d R_NUE2NED = [] {
 //     Eigen::Matrix3d tmp;
-//     tmp <<  1, 0, 0, 
-//             0, 0, 1, 
+//     tmp <<  1, 0, 0,
+//             0, 0, 1,
 //             0, -1, 0;
 //     return tmp;
 // }();
@@ -30,8 +30,8 @@ using namespace Eigen;
 // Used to convert mocap frame (NUE) to ROS ENU.
 static Eigen::Matrix3d R_NUE2ENU = [] {
     Eigen::Matrix3d tmp;
-    tmp <<  0, 0, 1, 
-            1, 0, 0, 
+    tmp <<  0, 0, 1,
+            1, 0, 0,
             0, 1, 0;
     return tmp;
 }();
@@ -39,7 +39,7 @@ static Eigen::Matrix3d R_NUE2ENU = [] {
 Vector3d positionConvertNUE2ENU(double* positionNUE){
   Vector3d positionNUEVector, positionENUVector;
   positionNUEVector << positionNUE[0], positionNUE[1], positionNUE[2];
-  
+
   positionENUVector = R_NUE2ENU * positionNUEVector;
   return positionENUVector;
 }
@@ -60,15 +60,15 @@ int main(int argc, char *argv[])
 {
   // Keep track of ntime offset.
   int64_t offset_between_windows_and_linux = std::numeric_limits<int64_t>::max();
- 
+
   // Init ROS
   ros::init(argc, argv, "optitrack_motive_2_client_node");
   ros::NodeHandle n;
-  
-    
+
+
   // Get CMDline arguments for server and local IP addresses.
-  std::string szMyIPAddress; 
-  std::string szServerIPAddress; 
+  std::string szMyIPAddress;
+  std::string szServerIPAddress;
 
   try {
     po::options_description desc ("Options");
@@ -104,7 +104,7 @@ int main(int argc, char *argv[])
   while (true){
     // Wait for mocap packet
     mocap_.spin();
-    
+
     std::vector<agile::Packet> mocap_packets = mocap_.getPackets();
 
     for (agile::Packet mocap_packet : mocap_packets){
@@ -128,7 +128,7 @@ int main(int argc, char *argv[])
       ros::Publisher publisher;
       acl_msgs::ViconState lastState;
       acl_msgs::ViconState currentState;
-      
+
       // Initialize publisher for rigid body if not exist.
       if (!hasPreviousMessage){
         std::string topic = "/" + mocap_packet.model_name + "/vicon";
@@ -156,7 +156,7 @@ int main(int argc, char *argv[])
       currentState.pose.orientation.z = quaternionENUVector.z();
       currentState.pose.orientation.w = quaternionENUVector.w();
       currentState.has_pose = true;
-      
+
       // Loop through markers and convert positions from NUE to ENU
       // @TODO since the state message does not understand marker locations.
 
@@ -166,7 +166,7 @@ int main(int argc, char *argv[])
         currentState.twist.linear.x = (currentState.pose.position.x - lastState.pose.position.x)/(dt_nsec * 1e9);
         currentState.twist.linear.y = (currentState.pose.position.y - lastState.pose.position.y)/(dt_nsec * 1e9);
         currentState.twist.linear.z = (currentState.pose.position.z - lastState.pose.position.z)/(dt_nsec * 1e9);
-        
+
         // Calculate rotational twist
         Quaterniond lastQuaternion;
         lastQuaternion.x() = lastState.pose.orientation.x;
@@ -181,21 +181,21 @@ int main(int argc, char *argv[])
         currentState.twist.angular.x = 0;
         currentState.twist.angular.y = 0;
         currentState.twist.angular.z = 0;
-          
+
         //currentState.twist.angular.x = twistEulerVector(0);
         //currentState.twist.angular.y = twistEulerVector(1);
         //currentState.twist.angular.z = twistEulerVector(2);
         //currentState.has_twist = true;
-        
+
         // Calculate accelerations. Requires last state message.
         currentState.accel.x = (currentState.twist.linear.x - lastState.twist.linear.x)/(dt_nsec * 1e9);
         currentState.accel.y = (currentState.twist.linear.y - lastState.twist.linear.y)/(dt_nsec * 1e9);
         currentState.accel.z = (currentState.twist.linear.z - lastState.twist.linear.z)/(dt_nsec * 1e9);
         currentState.has_accel = true;
-          
+
         // @TODO: Calculate angular acceleration
       }
-      
+
       // Save state for future acceleration and twist computations
       pastStateMessages[mocap_packet.rigid_body_id] = currentState;
 
