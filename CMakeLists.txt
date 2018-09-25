@@ -107,7 +107,7 @@ find_package(Eigen3 REQUIRED NO_MODULE)
 catkin_package(
  INCLUDE_DIRS include
  LIBRARIES optitrack_motive_2_client
- CATKIN_DEPENDS nav_msgs roscpp rostime std_msgs
+ CATKIN_DEPENDS nav_msgs acl_msgs roscpp rostime std_msgs
 #  DEPENDS system_lib
 )
 
@@ -153,7 +153,7 @@ add_executable(${PROJECT_NAME}_node src/optitrack_motive_2_client_node.cpp)
 target_link_libraries(${PROJECT_NAME}_node
   ${PROJECT_NAME}
   ${catkin_LIBRARIES}
-  ${Boost_LIBRARIES} 
+  ${Boost_LIBRARIES}
   ${catkin_LIBRARIES}
 )
 
