@@ -1,6 +1,7 @@
 #ifndef MOTIONCAPTURECLIENTFRAMEWORK_H
 #define MOTIONCAPTURECLIENTFRAMEWORK_H
 
+#include <vector>
 #include <iostream>
 #include <linux/limits.h>
 #include <boost/optional.hpp>
