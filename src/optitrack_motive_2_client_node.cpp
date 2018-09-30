@@ -163,9 +163,9 @@ int main(int argc, char *argv[])
       if (hasPreviousMessage){
         // Calculate twist. Requires last state message.
         int64_t dt_nsec = packet_ntime - (lastState.header.stamp.sec*1e9 + lastState.header.stamp.nsec);
-        currentState.twist.linear.x = (currentState.pose.position.x - lastState.pose.position.x)/(dt_nsec * 1e9);
-        currentState.twist.linear.y = (currentState.pose.position.y - lastState.pose.position.y)/(dt_nsec * 1e9);
-        currentState.twist.linear.z = (currentState.pose.position.z - lastState.pose.position.z)/(dt_nsec * 1e9);
+        currentState.twist.linear.x = (currentState.pose.position.x - lastState.pose.position.x)*1e9/dt_nsec;
+        currentState.twist.linear.y = (currentState.pose.position.y - lastState.pose.position.y)*1e9/dt_nsec;
+        currentState.twist.linear.z = (currentState.pose.position.z - lastState.pose.position.z)*1e9/dt_nsec;
 
         // Calculate rotational twist
         Quaterniond lastQuaternion;
@@ -188,9 +188,9 @@ int main(int argc, char *argv[])
         //currentState.has_twist = true;
 
         // Calculate accelerations. Requires last state message.
-        currentState.accel.x = (currentState.twist.linear.x - lastState.twist.linear.x)/(dt_nsec * 1e9);
-        currentState.accel.y = (currentState.twist.linear.y - lastState.twist.linear.y)/(dt_nsec * 1e9);
-        currentState.accel.z = (currentState.twist.linear.z - lastState.twist.linear.z)/(dt_nsec * 1e9);
+        currentState.accel.x = (currentState.twist.linear.x - lastState.twist.linear.x)*1e9/dt_nsec;
+        currentState.accel.y = (currentState.twist.linear.y - lastState.twist.linear.y)*1e9/dt_nsec;
+        currentState.accel.z = (currentState.twist.linear.z - lastState.twist.linear.z)*1e9/dt_nsec;
         currentState.has_accel = true;
 
         // @TODO: Calculate angular acceleration
