@@ -12,7 +12,8 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   rostime
   std_msgs
-  acl_msgs # used for compatibility with ACL group's Vicon message type.
+  tf2_ros
+  geometry_msgs
 )
 
 ## System dependencies are found with CMake's conventions

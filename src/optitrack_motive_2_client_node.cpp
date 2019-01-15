@@ -1,50 +1,141 @@
-// Include motion capture framework
-#include "optitrack_motive_2_client/motionCaptureClientFramework.h"
-// Include ACL message types (https://bitbucket.org/brettlopez/acl_msgs.git)
-#include "acl_msgs/ViconState.h"
-
-// Includes for ROS
-#include "ros/ros.h"
-
-// Includes for node
+// Standard includes
+#include <iostream>
+#include <fstream>
+#include <deque>
 #include <boost/program_options.hpp>
 #include <Eigen/Core>
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
-#include <iostream>
-#include <fstream>
+
+// Includes for ROS
+#include <ros/ros.h>
+#include <tf2_ros/transform_broadcaster.h>
+#include <geometry_msgs/TransformStamped.h>
+#include <geometry_msgs/PoseStamped.h>
+#include <std_msgs/Float64.h>
+
+// Include motion capture framework
+#include "optitrack_motive_2_client/motionCaptureClientFramework.h"
 
 namespace po = boost::program_options;
 using namespace Eigen;
 
-// Used to convert mocap frame (NUE) to LCM NED.
-// static Eigen::Matrix3d R_NUE2NED = [] {
-//     Eigen::Matrix3d tmp;
-//     tmp <<  1, 0, 0, 
-//             0, 0, 1, 
-//             0, -1, 0;
-//     return tmp;
-// }();
+class OptitrackMotive2Client  {
+public:
 
+  OptitrackMotive2Client(std::string myIP, std::string serverIP) {
 
-// Used to convert mocap frame (NUE) to ROS ENU.
-static Eigen::Matrix3d R_NUE2ENU = [] {
-    Eigen::Matrix3d tmp;
-    tmp <<  0, 0, 1, 
-            1, 0, 0, 
-            0, 1, 0;
-    return tmp;
-}();
+    // Init mocap framework
+    agile::motionCaptureClientFramework mocap_ = agile::motionCaptureClientFramework(myIP, serverIP);
 
-Vector3d positionConvertNUE2ENU(double* positionNUE){
-  Vector3d positionNUEVector, positionENUVector;
-  positionNUEVector << positionNUE[0], positionNUE[1], positionNUE[2];
-  
-  positionENUVector = R_NUE2ENU * positionNUEVector;
-  return positionENUVector;
-}
+    // Used to convert mocap frame (NUE) to ROS ENU.
+    R_NUE2ENU << 0, 0, 1,
+                 1, 0, 0,
+                 0, 1, 0;
 
-Quaterniond quaternionConvertNUE2ENU(double* quaternionNUE){
+    // Create a publisher for the base link pose
+    pose_pub = n.advertise<geometry_msgs::PoseStamped>("/optitrack/pose", 1);
+
+    // Create a subscriber for lag messages
+    double lag = 0;
+    lag_sub = n.subscribe("/optitrack/lag", 1, &OptitrackMotive2Client::lag_callback, this);
+
+    while (ros::ok()) {
+      // Wait for mocap packet
+      mocap_.spin();
+      
+      // @TODO: Make getPackets return a list.
+      std::vector<agile::Packet> mocap_packets = mocap_.getPackets();
+
+      for (agile::Packet mocap_packet : mocap_packets) {
+
+        // Skip this rigid body if tracking is invalid
+        if (!mocap_packet.tracking_valid) continue;
+
+        // Collect time offsets
+        int64_t offset = mocap_packet.transmit_timestamp - mocap_packet.receive_timestamp;
+        offsets.push_back(offset);
+        // Make the queue stays the same size
+        while (offsets.size() > window_size) offsets.pop_front();
+
+        // Perform a rolling average over the offsets
+        offset_between_windows_and_linux = 0;
+        for (auto it = offsets.begin(); it != offsets.end(); it++) {
+          offset_between_windows_and_linux += (*it)/offsets.size();
+        }
+
+        // Apply the offset to the exposure time
+        uint64_t packet_ntime = mocap_packet.mid_exposure_timestamp - offset_between_windows_and_linux;
+        double packet_time = packet_ntime/(double)1e9; // in seconds
+        packet_time += lag;
+
+        // Create a transformation message
+        geometry_msgs::TransformStamped ts;
+
+        // Add the timestamp created using the offsets
+        // Add in the lag parameter to account for system lag
+        ts.header.stamp = ros::Time(packet_time);
+
+        // Add the frames
+        ts.header.frame_id = "/map";
+        ts.child_frame_id = "/laser";
+
+        // Add the translation
+        Vector3d positionENUVector = positionConvertNUE2ENU(mocap_packet.pos);
+        ts.transform.translation.x = positionENUVector(0);
+        ts.transform.translation.y = positionENUVector(1);
+        ts.transform.translation.z = positionENUVector(2);
+        // Add the rotation
+        Quaterniond quaternionENUVector = quaternionConvertNUE2ENU(mocap_packet.orientation);
+        ts.transform.rotation.x = quaternionENUVector.x();
+        ts.transform.rotation.y = quaternionENUVector.y();
+        ts.transform.rotation.z = quaternionENUVector.z();
+        ts.transform.rotation.w = quaternionENUVector.w();
+
+        // Create a pose for visualization in rviz
+        geometry_msgs::PoseStamped ps;
+        ps.header.stamp = ts.header.stamp;
+        ps.header.frame_id = "/laser";
+
+        // Publish the transform and the pose
+        br.sendTransform(ts);
+        pose_pub.publish(ps);
+      }
+      ros::spinOnce();
+    }
+  }
+
+    
+private:
+  // ROS Communication
+  ros::NodeHandle n;
+  tf2_ros::TransformBroadcaster br;
+  ros::Subscriber lag_sub;
+  ros::Publisher pose_pub;
+
+  // Variables to keep track of the time offset between the computers
+  int64_t offset_between_windows_and_linux = std::numeric_limits<int64_t>::max();
+  static const int window_size = 100;
+  std::deque<int64_t> offsets;
+  double lag;
+
+  // Used to convert mocap frame (NUE) to ROS ENU.
+  Eigen::Matrix3d R_NUE2ENU;
+
+  void lag_callback(const std_msgs::Float64::ConstPtr & msg) {
+    lag = msg -> data;
+    std::cout << "lag: " << lag << std::endl;
+  }
+
+  Vector3d positionConvertNUE2ENU(double* positionNUE){
+    Vector3d positionNUEVector, positionENUVector;
+    positionNUEVector << positionNUE[0], positionNUE[1], positionNUE[2];
+    
+    positionENUVector = R_NUE2ENU * positionNUEVector;
+    return positionENUVector;
+  }
+
+  Quaterniond quaternionConvertNUE2ENU(double* quaternionNUE){
     Quaterniond quaternionInNUE;
     quaternionInNUE.x() = quaternionNUE[0];
     quaternionInNUE.y() = quaternionNUE[1];
@@ -54,22 +145,13 @@ Quaterniond quaternionConvertNUE2ENU(double* quaternionNUE){
     Quaterniond quaternionInENU = Quaterniond(R_NUE2ENU * quaternionInNUE.normalized().toRotationMatrix()
                               * R_NUE2ENU.transpose());
     return quaternionInENU;
-}
+  }
+};
 
-int main(int argc, char *argv[])
-{
-  // Keep track of ntime offset.
-  int64_t offset_between_windows_and_linux = std::numeric_limits<int64_t>::max();
- 
-  // Init ROS
-  ros::init(argc, argv, "optitrack_motive_2_client_node");
-  ros::NodeHandle n;
-  
-    
+int main(int argc, char *argv[]) {
   // Get CMDline arguments for server and local IP addresses.
   std::string szMyIPAddress; 
   std::string szServerIPAddress; 
-
   try {
     po::options_description desc ("Options");
     desc.add_options()
@@ -93,109 +175,8 @@ int main(int argc, char *argv[])
   }
   catch (...) {}
 
-  // Init mocap framework
-  agile::motionCaptureClientFramework mocap_ = agile::motionCaptureClientFramework(szMyIPAddress, szServerIPAddress);
-
-  // Some vars to calculate twist/acceleration and dts
-  // Also keeps track of the various publishers
-  std::map<int, ros::Publisher> rosPublishers;
-  std::map<int, acl_msgs::ViconState> pastStateMessages;
-
-  while (true){
-    // Wait for mocap packet
-    mocap_.spin();
-    
-    std::vector<agile::Packet> mocap_packets = mocap_.getPackets();
-
-    for (agile::Packet mocap_packet : mocap_packets){
-
-      // @TODO: Make getPackets return a list.
-
-      // Skip this rigid body if tracking is invalid
-      if (!mocap_packet.tracking_valid)
-        continue;
-
-      // estimate the windows to linux constant offset by taking the minimum seen offset.
-      // @TODO: Make offset a rolling average instead of a latching offset.
-      int64_t offset = mocap_packet.transmit_timestamp - mocap_packet.receive_timestamp;
-      if (offset < offset_between_windows_and_linux ){
-        offset_between_windows_and_linux = offset;
-      }
-      uint64_t packet_ntime = mocap_packet.mid_exposure_timestamp - offset_between_windows_and_linux;
-
-      // Get past state and publisher (if they exist)
-      bool hasPreviousMessage = (rosPublishers.find(mocap_packet.rigid_body_id) != rosPublishers.end());
-      ros::Publisher publisher;
-      acl_msgs::ViconState lastState;
-      acl_msgs::ViconState currentState;
-      
-      // Initialize publisher for rigid body if not exist.
-      if (!hasPreviousMessage){
-        std::string topic = "/" + mocap_packet.model_name + "/vicon";
-
-        publisher = n.advertise<acl_msgs::ViconState>(topic, 1);
-        rosPublishers[mocap_packet.rigid_body_id] = publisher;
-      } else {
-        // Get saved publisher and last state
-        publisher = rosPublishers[mocap_packet.rigid_body_id];
-        lastState = pastStateMessages[mocap_packet.rigid_body_id];
-      }
-
-      // Add timestamp
-      currentState.header.stamp = ros::Time(packet_ntime/1e9, packet_ntime%(int64_t)1e9);
-
-      // Convert rigid body position from NUE to ROS ENU
-      Vector3d positionENUVector = positionConvertNUE2ENU(mocap_packet.pos);
-      currentState.pose.position.x = positionENUVector(0);
-      currentState.pose.position.y = positionENUVector(1);
-      currentState.pose.position.z = positionENUVector(2);
-      // Convert rigid body rotation from NUE to ROS ENU
-      Quaterniond quaternionENUVector = quaternionConvertNUE2ENU(mocap_packet.orientation);
-      currentState.pose.orientation.x = quaternionENUVector.x();
-      currentState.pose.orientation.y = quaternionENUVector.y();
-      currentState.pose.orientation.z = quaternionENUVector.z();
-      currentState.pose.orientation.w = quaternionENUVector.w();
-      currentState.has_pose = true;
-      
-      // Loop through markers and convert positions from NUE to ENU
-      // @TODO since the state message does not understand marker locations.
-
-      if (hasPreviousMessage){
-        // Calculate twist. Requires last state message.
-        currentState.twist.linear.x = currentState.pose.position.x - lastState.pose.position.x;
-        currentState.twist.linear.y = currentState.pose.position.y - lastState.pose.position.y;
-        currentState.twist.linear.z = currentState.pose.position.z - lastState.pose.position.z;
-        
-        // Calculate rotational twist
-        Quaterniond lastQuaternion;
-        lastQuaternion.x() = lastState.pose.orientation.x;
-        lastQuaternion.y() = lastState.pose.orientation.y;
-        lastQuaternion.z() = lastState.pose.orientation.z;
-        lastQuaternion.w() = lastState.pose.orientation.w;
-
-        // @TODO: not sure how to calculate the angular twist. Is it in local frame or global frame?
-        Quaterniond twistQuaternion = quaternionENUVector * lastQuaternion.inverse();
-        Vector3d twistEulerVector = twistQuaternion.toRotationMatrix().eulerAngles(2, 1, 0);
-
-        currentState.twist.angular.x = twistEulerVector(0);
-        currentState.twist.angular.y = twistEulerVector(1);
-        currentState.twist.angular.z = twistEulerVector(2);
-        currentState.has_twist = true;
-        
-        // Calculate accelerations. Requires last state message.
-        int64_t dt_nsec = packet_ntime - (lastState.header.stamp.sec*1e9 + lastState.header.stamp.nsec);
-        currentState.accel.x = (currentState.twist.linear.x - lastState.twist.linear.x)/(dt_nsec * 1e9);
-        currentState.accel.y = (currentState.twist.linear.y - lastState.twist.linear.y)/(dt_nsec * 1e9);
-        currentState.accel.z = (currentState.twist.linear.z - lastState.twist.linear.z)/(dt_nsec * 1e9);
-        currentState.has_accel = true;
-      }
-      
-      // Save state for future acceleration and twist computations
-      pastStateMessages[mocap_packet.rigid_body_id] = currentState;
-
-      // Publish ROS state.
-      publisher.publish(currentState);
-
-    }
-  }
+  // Init ROS
+  ros::init(argc, argv, "optitrack_motive_2_client_node");
+  OptitrackMotive2Client(szMyIPAddress, szServerIPAddress);
+  return 0;
 }

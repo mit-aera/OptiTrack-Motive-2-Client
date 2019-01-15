@@ -12,15 +12,14 @@ cd ~/catkin_ws/src
 curl https://raw.githubusercontent.com/AgileDrones/OptiTrack-Motive-2-Client/master/.rosinstall >> .rosinstall
 wstool update
 
-cd ../
+cd ~/catkin_ws
 catkin_make
-
 ```
 
 ## Running Client Node
 
 ```bash
-rosrun optitrack_motive_2_client optitrack_motive_2_client_node --server 192.168.2.10 --client 192.168.2.1
+rosrun optitrack_motive_2_client optitrack_motive_2_client_node --server 192.168.1.12 --client 192.168.1.103
 ```
 
 ## Debugging Client Node
