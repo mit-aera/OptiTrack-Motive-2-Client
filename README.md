@@ -19,7 +19,7 @@ catkin_make
 ## Running Client Node
 
 ```bash
-rosrun optitrack_motive_2_client optitrack_motive_2_client_node --server 192.168.1.12 --client 192.168.1.103
+rosrun optitrack_motive_2_client optitrack_motive_2_client_node --server 192.168.1.12 --local 192.168.1.103
 ```
 
 ## Debugging Client Node
