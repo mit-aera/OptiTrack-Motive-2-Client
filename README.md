@@ -6,12 +6,11 @@
 # Prerequisites
 sudo apt install libeigen3-dev
 
-# Install in ROS workspace. Assumes that 'wstool init' has been run in workspace
+# Clone the code
 cd ~/catkin_ws/src
+git clone -b racecar https://github.com/AgileDrones/OptiTrack-Motive-2-Client.git
 
-curl https://raw.githubusercontent.com/AgileDrones/OptiTrack-Motive-2-Client/master/.rosinstall >> .rosinstall
-wstool update
-
+# Catkin make
 cd ~/catkin_ws
 catkin_make
 ```
