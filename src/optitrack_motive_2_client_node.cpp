@@ -13,6 +13,7 @@
 #include <Eigen/Geometry>
 #include <iostream>
 #include <fstream>
+#include <tf/transform_broadcaster.h>
 
 namespace po = boost::program_options;
 using namespace Eigen;
@@ -65,7 +66,6 @@ int main(int argc, char *argv[])
   ros::init(argc, argv, "optitrack_motive_2_client_node");
   ros::NodeHandle n;
 
-
   // Get CMDline arguments for server and local IP addresses.
   std::string szMyIPAddress;
   std::string szServerIPAddress;
@@ -96,6 +96,7 @@ int main(int argc, char *argv[])
   // Init mocap framework
   agile::motionCaptureClientFramework mocap_ = agile::motionCaptureClientFramework(szMyIPAddress, szServerIPAddress);
 
+  ROS_INFO("\nInitialized motion capture framework\n");
   // Some vars to calculate twist/acceleration and dts
   // Also keeps track of the various publishers
   std::map<int, ros::Publisher> rosPublishers;
@@ -105,6 +106,7 @@ int main(int argc, char *argv[])
     // Wait for mocap packet
     mocap_.spin();
 
+    ROS_INFO("Got motion capture packet\n");
     std::vector<agile::Packet> mocap_packets = mocap_.getPackets();
 
     for (agile::Packet mocap_packet : mocap_packets){
@@ -128,10 +130,13 @@ int main(int argc, char *argv[])
       ros::Publisher publisher;
       acl_msgs::ViconState lastState;
       acl_msgs::ViconState currentState;
+      tf::TransformBroadcaster broadcaster;
+      tf::Transform transform;
 
       // Initialize publisher for rigid body if not exist.
       if (!hasPreviousMessage){
         std::string topic = "/" + mocap_packet.model_name + "/vicon";
+        ROS_INFO("Making a publisher"); 
 
         publisher = n.advertise<acl_msgs::ViconState>(topic, 1);
         rosPublishers[mocap_packet.rigid_body_id] = publisher;
@@ -156,6 +161,12 @@ int main(int argc, char *argv[])
       currentState.pose.orientation.z = quaternionENUVector.z();
       currentState.pose.orientation.w = quaternionENUVector.w();
       currentState.has_pose = true;
+
+      transform.setOrigin(tf::Vector3(positionENUVector(0), positionENUVector(1), positionENUVector(2)));
+      transform.setRotation(tf::Quaternion(quaternionENUVector.x(), 
+                                           quaternionENUVector.y(),
+                                           quaternionENUVector.z(),
+                                           quaternionENUVector.w()));
 
       // Loop through markers and convert positions from NUE to ENU
       // @TODO since the state message does not understand marker locations.
@@ -201,6 +212,7 @@ int main(int argc, char *argv[])
 
       // Publish ROS state.
       publisher.publish(currentState);
+      broadcaster.sendTransform(tf::StampedTransform(transform, currentState.header.stamp, "world", "/uav/imu"));
 
     }
   }

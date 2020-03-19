@@ -54,6 +54,7 @@
   <depend>roscpp</depend>
   <depend>rostime</depend>
   <depend>std_msgs</depend>
+  <depend>tf</depend>
   <depend>acl_msgs</depend>
   
   <!-- The export tag contains other, unspecified, tags -->

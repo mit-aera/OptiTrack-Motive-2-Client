@@ -22,6 +22,7 @@ bool motionCaptureClientFramework::initConnection() {
   // Open socket for listening
   auto DataSocket = socket(AF_INET, SOCK_DGRAM, 0);
   MulticastAddress.s_addr = inet_addr(MULTICAST_ADDRESS);
+  MyAddress.s_addr = inet_addr(my_address);
   printf("Client: %s\n", my_address);
   printf("Server: %s\n", server_address);
   printf("Multicast Group: %s\n", MULTICAST_ADDRESS);
@@ -108,51 +109,54 @@ bool motionCaptureClientFramework::initConnection() {
   PacketOut.iMessage = NAT_CONNECT;
   PacketOut.nDataBytes = 0;
   int nTries = 3;
-  while (nTries--) {
-    ssize_t iRet = sendto(CommandSocket,
-                        (char *) &PacketOut,
-                        4 + PacketOut.nDataBytes,
-                        0,
-                        (sockaddr *) &HostAddr,
-                        sizeof(HostAddr));
-    printf("Trying to connect\n");
-    if (iRet != -1)
-      printf("Connected!\n Waiting for server info in response.\n");
+  
+   while (nTries--) {
+  ssize_t iRet = sendto(CommandSocket,
+                      (char *) &PacketOut,
+                      4 + PacketOut.nDataBytes,
+                      0,
+                      (sockaddr *) &HostAddr,
+                      sizeof(HostAddr));
+  printf("Trying to connect\n");
+  if (iRet != -1) {
+    printf("Connected!\n Waiting for server info in response.\n");
+    return true;
 
-      // Wait for server response. 
-      // This will contain the server tick frequency.
-      char ip_as_str[INET_ADDRSTRLEN];
-      ssize_t nDataBytesReceived;
-      sockaddr_in TheirAddress{};
-      agile::sPacket PacketIn{};
-      socklen_t addr_len = sizeof(struct sockaddr);
-      nDataBytesReceived = recvfrom(CommandSocket,
-                                    (char *) &PacketIn,
-                                    sizeof(agile::sPacket),
-                                    0,
-                                    (struct sockaddr *) &TheirAddress,
-                                    &addr_len);
+    // Wait for server response. 
+    // This will contain the server tick frequency.
+    char ip_as_str[INET_ADDRSTRLEN];
+    ssize_t nDataBytesReceived;
+    sockaddr_in TheirAddress{};
+    agile::sPacket PacketIn{};
+    socklen_t addr_len = sizeof(struct sockaddr);
+    nDataBytesReceived = recvfrom(CommandSocket,
+                                  (char *) &PacketIn,
+                                  sizeof(agile::sPacket),
+                                  0,
+                                  (struct sockaddr *) &TheirAddress,
+                                  &addr_len);
 
-      // if ((nDataBytesReceived == 0) || (nDataBytesReceived == -1))
-      //   continue;
+    // if ((nDataBytesReceived == 0) || (nDataBytesReceived == -1))
+    //   continue;
 
-      // debug - print message
-      inet_ntop(AF_INET, &(TheirAddress.sin_addr), ip_as_str, INET_ADDRSTRLEN);
-      printf("[Client] Received command from %s: Command=%d, nDataBytes=%d\n",
-            ip_as_str, (int) PacketIn.iMessage, (int) PacketIn.nDataBytes);
+    // debug - print message
+    inet_ntop(AF_INET, &(TheirAddress.sin_addr), ip_as_str, INET_ADDRSTRLEN);
+    printf("[Client] Received command from %s: Command=%d, nDataBytes=%d\n",
+          ip_as_str, (int) PacketIn.iMessage, (int) PacketIn.nDataBytes);
 
-      unsigned char *ptr = (unsigned char *) &PacketIn;
-      agile::sSender_Server *server_info = (agile::sSender_Server *) (ptr + 4);
+    unsigned char *ptr = (unsigned char *) &PacketIn;
+    agile::sSender_Server *server_info = (agile::sSender_Server *) (ptr + 4);
 
-      std::cout << "server tick frequency: " << server_info->HighResClockFrequency << std::endl;
-      server_frequency = server_info->HighResClockFrequency;
-      // Done processing server response.
-      break;
-
-      return true;
-    printf("Initial connect request failed\n");
-    return false;
+    std::cout << "server tick frequency: " << server_info->HighResClockFrequency << std::endl;
+    server_frequency = server_info->HighResClockFrequency;
+    // Done processing server response.
+    break;
   }
+
+    return true;
+  printf("Initial connect request failed\n");
+  return false;
+}
 }
 
 // ============================== Data mode ================================ //
@@ -217,12 +221,13 @@ void motionCaptureClientFramework::spin() {
   // Block until we receive a datagram from the network
   // (from anyone including ourselves)
   //ssize_t nDataBytesReceived =
-  recvfrom(DataSocket,
+  ssize_t recv_sz = recv(DataSocket,
            szData,
            sizeof(szData),
-           0,
-           (sockaddr *) &TheirAddress,
-           &addr_len);
+           0); //,
+           //(sockaddr *) &TheirAddress,
+           //&addr_len);
+  std::cout << "recieved packet of size: " << recv_sz << std::endl;
   // Once we have bytes recieved Unpack organizes all the data
   //
   // Clear vector of previous packets.
@@ -304,6 +309,7 @@ void motionCaptureClientFramework::Unpack(char *pData, std::vector<Packet> &outp
   memcpy(&nBytes, ptr, 2);
   ptr += 2;
 
+  std::cout << "Got message of type: " << MessageID << std::endl;
   if (MessageID == 7)      // FRAME OF MOCAP DATA packet
   {
     // Next 4 Bytes is the frame number

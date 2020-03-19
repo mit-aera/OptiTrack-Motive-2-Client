@@ -12,6 +12,7 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   rostime
   std_msgs
+  tf
   acl_msgs # used for compatibility with ACL group's Vicon message type.
 )
 
