@@ -13,7 +13,9 @@
 #include <Eigen/Geometry>
 #include <iostream>
 #include <fstream>
-#include <tf/transform_broadcaster.h>
+#include <tf2_ros/transform_broadcaster.h>
+#include <tf2/LinearMath/Quaternion.h>
+#include <geometry_msgs/Vector3Stamped.h>
 
 namespace po = boost::program_options;
 using namespace Eigen;
@@ -101,6 +103,9 @@ int main(int argc, char *argv[])
   // Also keeps track of the various publishers
   std::map<int, ros::Publisher> rosPublishers;
   std::map<int, acl_msgs::ViconState> pastStateMessages;
+  ros::Publisher velPublisher;
+  tf2_ros::TransformBroadcaster broadcaster;
+  velPublisher = n.advertise<geometry_msgs::Vector3Stamped>("/uav/velocity", 100);
 
   while (true){
     // Wait for mocap packet
@@ -130,8 +135,6 @@ int main(int argc, char *argv[])
       ros::Publisher publisher;
       acl_msgs::ViconState lastState;
       acl_msgs::ViconState currentState;
-      tf::TransformBroadcaster broadcaster;
-      tf::Transform transform;
 
       // Initialize publisher for rigid body if not exist.
       if (!hasPreviousMessage){
@@ -162,11 +165,11 @@ int main(int argc, char *argv[])
       currentState.pose.orientation.w = quaternionENUVector.w();
       currentState.has_pose = true;
 
-      transform.setOrigin(tf::Vector3(positionENUVector(0), positionENUVector(1), positionENUVector(2)));
-      transform.setRotation(tf::Quaternion(quaternionENUVector.x(), 
-                                           quaternionENUVector.y(),
-                                           quaternionENUVector.z(),
-                                           quaternionENUVector.w()));
+//    transform.setOrigin(tf2::Vector3(positionENUVector(0), positionENUVector(1), positionENUVector(2)));
+//    transform.setRotation(tf2::Quaternion(quaternionENUVector.x(), 
+//                                         quaternionENUVector.y(),
+//                                         quaternionENUVector.z(),
+//                                         quaternionENUVector.w()));
 
       // Loop through markers and convert positions from NUE to ENU
       // @TODO since the state message does not understand marker locations.
@@ -211,8 +214,29 @@ int main(int argc, char *argv[])
       pastStateMessages[mocap_packet.rigid_body_id] = currentState;
 
       // Publish ROS state.
-      publisher.publish(currentState);
-      broadcaster.sendTransform(tf::StampedTransform(transform, currentState.header.stamp, "world", "/uav/imu"));
+      geometry_msgs::TransformStamped transformStamped;
+      geometry_msgs::Vector3Stamped _vector3stamped;
+      std::cout << "Time: " << currentState.header.stamp << std::endl;
+      _vector3stamped.header.stamp = currentState.header.stamp;
+      _vector3stamped.vector.x = currentState.twist.linear.x;
+      _vector3stamped.vector.y = currentState.twist.linear.y;
+      _vector3stamped.vector.z = currentState.twist.linear.z;
+
+      transformStamped.header.stamp = currentState.header.stamp;
+      transformStamped.header.frame_id = "mocap";
+      transformStamped.child_frame_id = "uav/imu";
+      transformStamped.transform.translation.x = currentState.pose.position.x;
+      transformStamped.transform.translation.y = currentState.pose.position.y;
+      transformStamped.transform.translation.z = currentState.pose.position.z;
+      transformStamped.transform.rotation.x = currentState.pose.orientation.x;
+      transformStamped.transform.rotation.y = currentState.pose.orientation.y;
+      transformStamped.transform.rotation.z = currentState.pose.orientation.z;
+      transformStamped.transform.rotation.w = currentState.pose.orientation.w;
+      
+      velPublisher.publish(_vector3stamped);
+      broadcaster.sendTransform(transformStamped);
+      ros::spinOnce();
+      //publisher.publish(currentState);
 
     }
   }
